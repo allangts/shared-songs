@@ -8,6 +8,7 @@ import {
   FaCompactDisc,
   FaCloudUploadAlt,
   FaUser,
+  FaFolderOpen,
 } from 'react-icons/fa'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -20,8 +21,8 @@ export default function MobileNav() {
     ? [
         { href: '/', icon: FaHome, label: 'Início' },
         { href: '/library', icon: FaCompactDisc, label: 'Biblioteca' },
+        { href: '/albums', icon: FaFolderOpen, label: 'Álbuns' },
         { href: '/upload', icon: FaCloudUploadAlt, label: 'Upload' },
-        { href: '/search', icon: FaSearch, label: 'Buscar' },
         { href: '/profile', icon: FaUser, label: 'Perfil' },
       ]
     : [

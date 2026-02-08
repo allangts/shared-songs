@@ -23,6 +23,17 @@ export interface Song {
   createdAt: string
 }
 
+export interface Album {
+  id: string
+  name: string
+  description: string | null
+  coverUrl: string | null
+  songCount: number
+  songs?: Song[]
+  createdAt: string
+  updatedAt: string
+}
+
 export interface PlayerSong {
   id: string
   title: string

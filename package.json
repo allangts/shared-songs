@@ -1,5 +1,5 @@
 {
-  "name": "shared-songs",
+  "name": "private-songs",
   "version": "0.1.0",
   "private": true,
   "scripts": {

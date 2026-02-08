@@ -14,6 +14,7 @@ model User {
   password  String
   avatar    String?
   songs     Song[]
+  albums    Album[]
   likes     Like[]
   createdAt DateTime @default(now())
 
@@ -21,22 +22,52 @@ model User {
 }
 
 model Song {
-  id         String   @id @default(cuid())
+  id         String      @id @default(cuid())
   title      String
   artist     String
   genre      String?
-  duration   Int      @default(0)
+  duration   Int         @default(0)
   audioKey   String
   coverKey   String?
-  plays      Int      @default(0)
-  uploader   User     @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  plays      Int         @default(0)
+  uploader   User        @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
   uploaderId String
   likes      Like[]
-  createdAt  DateTime @default(now())
+  albums     AlbumSong[]
+  createdAt  DateTime    @default(now())
 
   @@index([uploaderId])
   @@index([uploaderId, createdAt(sort: Desc)])
   @@index([genre])
+}
+
+model Album {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  coverKey    String?
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  songs       AlbumSong[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model AlbumSong {
+  id        String   @id @default(cuid())
+  album     Album    @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  albumId   String
+  song      Song     @relation(fields: [songId], references: [id], onDelete: Cascade)
+  songId    String
+  order     Int      @default(0)
+  addedAt   DateTime @default(now())
+
+  @@unique([albumId, songId])
+  @@index([albumId])
+  @@index([songId])
 }
 
 model Like {

@@ -55,7 +55,7 @@ export default function RegisterPage() {
           </div>
           <h1 className="text-2xl font-bold">Criar Conta</h1>
           <p className="text-zinc-400 text-sm mt-2">
-            Junte-se à comunidade e comece a compartilhar músicas
+            Crie sua conta e tenha sua biblioteca musical pessoal
           </p>
         </div>
 

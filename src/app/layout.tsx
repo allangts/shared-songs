@@ -11,9 +11,9 @@ import { Toaster } from 'react-hot-toast'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Shared Songs - Compartilhe Músicas com o Mundo',
+  title: 'Private Songs - Sua Biblioteca Musical Pessoal',
   description:
-    'Plataforma colaborativa onde você faz upload de músicas e compartilha com toda a comunidade. Descubra novas músicas todos os dias.',
+    'Sua biblioteca musical pessoal na nuvem. Faça upload das suas músicas, organize em álbuns e ouça de qualquer lugar.',
 }
 
 export default function RootLayout({

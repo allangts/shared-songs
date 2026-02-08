@@ -43,7 +43,7 @@ export default function LoginPage() {
           <div className="w-14 h-14 bg-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/20">
             <FaMusic className="text-black text-xl" />
           </div>
-          <h1 className="text-2xl font-bold">Entrar no Shared Songs</h1>
+          <h1 className="text-2xl font-bold">Entrar no Private Songs</h1>
           <p className="text-zinc-400 text-sm mt-2">
             Acesse sua conta e continue ouvindo
           </p>

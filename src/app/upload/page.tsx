@@ -179,7 +179,7 @@ export default function UploadPage() {
       <div className="mb-8">
         <h1 className="text-2xl md:text-3xl font-bold">Upload de Música</h1>
         <p className="text-zinc-400 mt-2">
-          Compartilhe suas músicas com toda a comunidade
+          Adicione músicas à sua biblioteca pessoal
         </p>
       </div>
 

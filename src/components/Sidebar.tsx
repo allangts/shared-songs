@@ -10,6 +10,7 @@ import {
   FaMusic,
   FaSignOutAlt,
   FaUser,
+  FaFolderOpen,
 } from 'react-icons/fa'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -21,6 +22,7 @@ export default function Sidebar() {
     ? [
         { href: '/', icon: FaHome, label: 'Início' },
         { href: '/library', icon: FaCompactDisc, label: 'Minha Biblioteca' },
+        { href: '/albums', icon: FaFolderOpen, label: 'Álbuns' },
         { href: '/search', icon: FaSearch, label: 'Buscar' },
       ]
     : [{ href: '/', icon: FaHome, label: 'Início' }]
@@ -35,7 +37,7 @@ export default function Sidebar() {
           </div>
           <div>
             <span className="text-lg font-bold tracking-tight">
-              Shared Songs
+              Private Songs
             </span>
           </div>
         </Link>
