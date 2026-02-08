@@ -9,63 +9,112 @@ import {
   FaSpinner,
   FaTimes,
   FaCheck,
+  FaPlus,
+  FaTrash,
 } from 'react-icons/fa'
 import { useAuth } from '@/contexts/AuthContext'
 import { GENRES } from '@/types'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
 
+interface FileEntry {
+  id: string
+  file: File
+  title: string
+  artist: string
+  genre: string
+  duration: number
+  coverFile: File | null
+  coverPreview: string | null
+  status: 'pending' | 'uploading' | 'done' | 'error'
+  errorMsg?: string
+}
+
+let entryIdCounter = 0
+
+function generateEntryId() {
+  return `entry-${Date.now()}-${entryIdCounter++}`
+}
+
+function titleFromFilename(filename: string): string {
+  return filename.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ')
+}
+
+function getDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const audio = new Audio()
+    audio.src = URL.createObjectURL(file)
+    audio.addEventListener('loadedmetadata', () => {
+      const dur = Math.round(audio.duration)
+      URL.revokeObjectURL(audio.src)
+      resolve(dur)
+    })
+    audio.addEventListener('error', () => {
+      URL.revokeObjectURL(audio.src)
+      resolve(0)
+    })
+  })
+}
+
 export default function UploadPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const audioInputRef = useRef<HTMLInputElement>(null)
-  const coverInputRef = useRef<HTMLInputElement>(null)
 
-  const [title, setTitle] = useState('')
-  const [artist, setArtist] = useState('')
-  const [genre, setGenre] = useState('')
-  const [audioFile, setAudioFile] = useState<File | null>(null)
-  const [coverFile, setCoverFile] = useState<File | null>(null)
-  const [coverPreview, setCoverPreview] = useState<string | null>(null)
-  const [audioDuration, setAudioDuration] = useState(0)
+  const [entries, setEntries] = useState<FileEntry[]>([])
+  const [commonArtist, setCommonArtist] = useState('')
+  const [commonGenre, setCommonGenre] = useState('')
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
 
-  const handleAudioSelect = useCallback((file: File) => {
-    if (!file.type.startsWith('audio/')) {
-      toast.error('Por favor, selecione um arquivo de áudio válido')
-      return
-    }
-    if (file.size > 100 * 1024 * 1024) {
-      toast.error('O arquivo deve ter no máximo 100MB')
-      return
-    }
+  // Stats
+  const totalFiles = entries.length
+  const doneCount = entries.filter((e) => e.status === 'done').length
+  const errorCount = entries.filter((e) => e.status === 'error').length
 
-    setAudioFile(file)
+  const addFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const audioFiles = Array.from(files).filter((f) => f.type.startsWith('audio/'))
 
-    // Extract duration
-    const audio = new Audio()
-    audio.src = URL.createObjectURL(file)
-    audio.addEventListener('loadedmetadata', () => {
-      setAudioDuration(Math.round(audio.duration))
-      URL.revokeObjectURL(audio.src)
-    })
+      if (audioFiles.length === 0) {
+        toast.error('Nenhum arquivo de áudio válido selecionado')
+        return
+      }
 
-    // Auto-fill title from filename
-    if (!title) {
-      const name = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ')
-      setTitle(name)
-    }
-  }, [title])
+      const oversized = audioFiles.filter((f) => f.size > 100 * 1024 * 1024)
+      if (oversized.length > 0) {
+        toast.error(`${oversized.length} arquivo(s) excede(m) 100MB e será(ão) ignorado(s)`)
+      }
 
-  const handleCoverSelect = useCallback((file: File) => {
-    if (!file.type.startsWith('image/')) {
-      toast.error('Por favor, selecione uma imagem válida')
-      return
-    }
-    setCoverFile(file)
-    setCoverPreview(URL.createObjectURL(file))
-  }, [])
+      const validFiles = audioFiles.filter((f) => f.size <= 100 * 1024 * 1024)
+
+      const newEntries: FileEntry[] = await Promise.all(
+        validFiles.map(async (file) => {
+          const duration = await getDuration(file)
+          return {
+            id: generateEntryId(),
+            file,
+            title: titleFromFilename(file.name),
+            artist: commonArtist,
+            genre: commonGenre,
+            duration,
+            coverFile: null,
+            coverPreview: null,
+            status: 'pending' as const,
+          }
+        })
+      )
+
+      setEntries((prev) => [...prev, ...newEntries])
+
+      if (validFiles.length === 1) {
+        toast.success('1 arquivo adicionado')
+      } else {
+        toast.success(`${validFiles.length} arquivos adicionados`)
+      }
+    },
+    [commonArtist, commonGenre]
+  )
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -82,61 +131,139 @@ export default function UploadPage() {
       e.preventDefault()
       e.stopPropagation()
       setDragActive(false)
-
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        const file = e.dataTransfer.files[0]
-        if (file.type.startsWith('audio/')) {
-          handleAudioSelect(file)
-        }
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        addFiles(e.dataTransfer.files)
       }
     },
-    [handleAudioSelect]
+    [addFiles]
   )
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const removeEntry = (id: string) => {
+    setEntries((prev) => {
+      const entry = prev.find((e) => e.id === id)
+      if (entry?.coverPreview) URL.revokeObjectURL(entry.coverPreview)
+      return prev.filter((e) => e.id !== id)
+    })
+  }
 
-    if (!audioFile) {
-      toast.error('Selecione um arquivo de áudio')
+  const updateEntry = (id: string, updates: Partial<FileEntry>) => {
+    setEntries((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, ...updates } : e))
+    )
+  }
+
+  const handleCoverForEntry = (id: string, file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Selecione uma imagem válida')
       return
     }
-    if (!title.trim()) {
-      toast.error('Preencha o título da música')
+    const preview = URL.createObjectURL(file)
+    updateEntry(id, { coverFile: file, coverPreview: preview })
+  }
+
+  const removeCoverForEntry = (id: string) => {
+    const entry = entries.find((e) => e.id === id)
+    if (entry?.coverPreview) URL.revokeObjectURL(entry.coverPreview)
+    updateEntry(id, { coverFile: null, coverPreview: null })
+  }
+
+  // Apply common artist to all pending entries
+  const applyCommonArtist = () => {
+    if (!commonArtist.trim()) return
+    setEntries((prev) =>
+      prev.map((e) =>
+        e.status === 'pending' ? { ...e, artist: commonArtist } : e
+      )
+    )
+    toast.success('Artista aplicado a todas as faixas')
+  }
+
+  // Apply common genre to all pending entries
+  const applyCommonGenre = () => {
+    if (!commonGenre) return
+    setEntries((prev) =>
+      prev.map((e) =>
+        e.status === 'pending' ? { ...e, genre: commonGenre } : e
+      )
+    )
+    toast.success('Gênero aplicado a todas as faixas')
+  }
+
+  const handleUploadAll = async () => {
+    const pendingEntries = entries.filter((e) => e.status === 'pending')
+    if (pendingEntries.length === 0) {
+      toast.error('Nenhum arquivo pendente para enviar')
       return
     }
-    if (!artist.trim()) {
-      toast.error('Preencha o nome do artista')
-      return
+
+    // Validate all entries
+    for (const entry of pendingEntries) {
+      if (!entry.title.trim()) {
+        toast.error(`Preencha o título para "${entry.file.name}"`)
+        return
+      }
+      if (!entry.artist.trim()) {
+        toast.error(`Preencha o artista para "${entry.file.name}"`)
+        return
+      }
     }
 
     setUploading(true)
-    try {
-      const formData = new FormData()
-      formData.append('audio', audioFile)
-      formData.append('title', title.trim())
-      formData.append('artist', artist.trim())
-      formData.append('genre', genre)
-      formData.append('duration', String(audioDuration))
-      if (coverFile) {
-        formData.append('cover', coverFile)
+
+    let successCount = 0
+    let failCount = 0
+
+    for (const entry of pendingEntries) {
+      updateEntry(entry.id, { status: 'uploading' })
+
+      try {
+        const formData = new FormData()
+        formData.append('audio', entry.file)
+        formData.append('title', entry.title.trim())
+        formData.append('artist', entry.artist.trim())
+        formData.append('genre', entry.genre)
+        formData.append('duration', String(entry.duration))
+        if (entry.coverFile) {
+          formData.append('cover', entry.coverFile)
+        }
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          throw new Error(data.error || 'Erro ao enviar')
+        }
+
+        updateEntry(entry.id, { status: 'done' })
+        successCount++
+      } catch (err: any) {
+        updateEntry(entry.id, {
+          status: 'error',
+          errorMsg: err.message || 'Erro ao enviar',
+        })
+        failCount++
       }
+    }
 
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      })
+    setUploading(false)
 
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Erro ao fazer upload')
-      }
-
-      toast.success('Música enviada com sucesso! 🎵')
-      router.push('/library')
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao fazer upload')
-    } finally {
-      setUploading(false)
+    if (failCount === 0) {
+      toast.success(
+        successCount === 1
+          ? 'Música enviada com sucesso! 🎵'
+          : `${successCount} músicas enviadas com sucesso! 🎵`
+      )
+      // Clear done entries after a short delay
+      setTimeout(() => {
+        router.push('/library')
+      }, 1000)
+    } else {
+      toast.error(
+        `${successCount} enviada(s), ${failCount} com erro. Corrija e tente novamente.`
+      )
     }
   }
 
@@ -174,193 +301,341 @@ export default function UploadPage() {
     )
   }
 
+  const pendingCount = entries.filter((e) => e.status === 'pending').length
+
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 md:py-12">
+    <div className="max-w-4xl mx-auto px-4 py-8 md:py-12">
       <div className="mb-8">
-        <h1 className="text-2xl md:text-3xl font-bold">Upload de Música</h1>
+        <h1 className="text-2xl md:text-3xl font-bold">Upload de Músicas</h1>
         <p className="text-zinc-400 mt-2">
-          Adicione músicas à sua biblioteca pessoal
+          Adicione músicas à sua biblioteca pessoal — selecione vários arquivos de uma vez
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Audio Drop Zone */}
-        <div
-          className={`relative border-2 border-dashed rounded-2xl p-8 md:p-12 text-center transition-all duration-300 cursor-pointer ${
-            dragActive
-              ? 'border-emerald-500 bg-emerald-500/5'
-              : audioFile
-                ? 'border-emerald-500/50 bg-emerald-500/5'
-                : 'border-zinc-700 hover:border-zinc-500 bg-zinc-900/30'
-          }`}
-          onDragEnter={handleDrag}
-          onDragLeave={handleDrag}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
-          onClick={() => audioInputRef.current?.click()}
-        >
-          <input
-            ref={audioInputRef}
-            type="file"
-            accept="audio/*"
-            onChange={(e) =>
-              e.target.files?.[0] && handleAudioSelect(e.target.files[0])
+      {/* Drop Zone */}
+      <div
+        className={`relative border-2 border-dashed rounded-2xl p-8 md:p-12 text-center transition-all duration-300 cursor-pointer mb-6 ${
+          dragActive
+            ? 'border-emerald-500 bg-emerald-500/5'
+            : entries.length > 0
+              ? 'border-zinc-700/50 bg-zinc-900/20 p-6 md:p-8'
+              : 'border-zinc-700 hover:border-zinc-500 bg-zinc-900/30'
+        }`}
+        onDragEnter={handleDrag}
+        onDragLeave={handleDrag}
+        onDragOver={handleDrag}
+        onDrop={handleDrop}
+        onClick={() => audioInputRef.current?.click()}
+      >
+        <input
+          ref={audioInputRef}
+          type="file"
+          accept="audio/*"
+          multiple
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              addFiles(e.target.files)
             }
-            className="hidden"
-          />
+            // Reset so the same files can be selected again
+            e.target.value = ''
+          }}
+          className="hidden"
+        />
 
-          {audioFile ? (
-            <div className="flex flex-col items-center">
-              <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-4">
-                <FaCheck className="text-emerald-500 text-xl" />
-              </div>
-              <p className="font-semibold text-lg">{audioFile.name}</p>
-              <p className="text-zinc-400 text-sm mt-1">
-                {(audioFile.size / (1024 * 1024)).toFixed(2)} MB
-                {audioDuration > 0 &&
-                  ` · ${Math.floor(audioDuration / 60)}:${(audioDuration % 60).toString().padStart(2, '0')}`}
-              </p>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setAudioFile(null)
-                  setAudioDuration(0)
-                }}
-                className="mt-3 text-sm text-zinc-400 hover:text-red-400 transition-colors flex items-center gap-1"
-              >
-                <FaTimes size={12} /> Remover
-              </button>
+        {entries.length > 0 ? (
+          <div className="flex items-center justify-center gap-3">
+            <FaPlus className="text-emerald-500" />
+            <p className="text-sm text-zinc-300">
+              Clique ou arraste para adicionar mais arquivos
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center">
+            <div className="w-16 h-16 bg-zinc-800 rounded-full flex items-center justify-center mb-4">
+              <FaMusic className="text-zinc-400 text-xl" />
             </div>
-          ) : (
-            <div className="flex flex-col items-center">
-              <div className="w-16 h-16 bg-zinc-800 rounded-full flex items-center justify-center mb-4">
-                <FaMusic className="text-zinc-400 text-xl" />
+            <p className="font-semibold text-lg mb-1">
+              Arraste seus arquivos de áudio aqui
+            </p>
+            <p className="text-zinc-400 text-sm">
+              ou clique para selecionar · Múltiplos arquivos · MP3, WAV, FLAC, OGG · Máx 100MB cada
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Common fields + File list */}
+      {entries.length > 0 && (
+        <>
+          {/* Common Artist / Genre */}
+          {pendingCount > 1 && (
+            <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-4 mb-6">
+              <p className="text-xs text-zinc-400 uppercase tracking-wider font-semibold mb-3">
+                Aplicar a todas as faixas pendentes
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={commonArtist}
+                    onChange={(e) => setCommonArtist(e.target.value)}
+                    placeholder="Artista em comum"
+                    className="flex-1 bg-zinc-800/50 border border-zinc-700/50 rounded-lg py-2 px-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={applyCommonArtist}
+                    disabled={!commonArtist.trim()}
+                    className="bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-30 disabled:cursor-not-allowed text-emerald-500 font-medium py-2 px-3 rounded-lg text-sm transition-colors whitespace-nowrap"
+                  >
+                    Aplicar
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <select
+                    value={commonGenre}
+                    onChange={(e) => setCommonGenre(e.target.value)}
+                    className="flex-1 bg-zinc-800/50 border border-zinc-700/50 rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none"
+                  >
+                    <option value="">Gênero em comum</option>
+                    {GENRES.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={applyCommonGenre}
+                    disabled={!commonGenre}
+                    className="bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-30 disabled:cursor-not-allowed text-emerald-500 font-medium py-2 px-3 rounded-lg text-sm transition-colors whitespace-nowrap"
+                  >
+                    Aplicar
+                  </button>
+                </div>
               </div>
-              <p className="font-semibold text-lg mb-1">
-                Arraste um arquivo de áudio aqui
-              </p>
-              <p className="text-zinc-400 text-sm">
-                ou clique para selecionar · MP3, WAV, FLAC, OGG · Máx 100MB
-              </p>
             </div>
           )}
-        </div>
 
-        {/* Song Info */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-              Título da Música *
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Nome da música"
-              className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl py-3 px-4 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-              Artista *
-            </label>
-            <input
-              type="text"
-              value={artist}
-              onChange={(e) => setArtist(e.target.value)}
-              placeholder="Nome do artista"
-              className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl py-3 px-4 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-            Gênero
-          </label>
-          <select
-            value={genre}
-            onChange={(e) => setGenre(e.target.value)}
-            className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all appearance-none"
-          >
-            <option value="">Selecione um gênero</option>
-            {GENRES.map((g) => (
-              <option key={g} value={g}>
-                {g}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Cover Image */}
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-            Capa (opcional)
-          </label>
-          <div className="flex items-center gap-4">
-            <div
-              className="w-24 h-24 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-700/50 flex items-center justify-center cursor-pointer hover:border-zinc-500 transition-colors flex-shrink-0"
-              onClick={() => coverInputRef.current?.click()}
-            >
-              {coverPreview ? (
-                <img
-                  src={coverPreview}
-                  alt="Capa"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <FaImage className="text-zinc-600 text-2xl" />
-              )}
-            </div>
-            <input
-              ref={coverInputRef}
-              type="file"
-              accept="image/*"
-              onChange={(e) =>
-                e.target.files?.[0] && handleCoverSelect(e.target.files[0])
-              }
-              className="hidden"
-            />
-            <div className="text-sm text-zinc-400">
-              <p>Clique para selecionar uma imagem de capa.</p>
-              <p className="text-zinc-500">JPG, PNG · Recomendado 500x500px</p>
-              {coverFile && (
+          {/* File List */}
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm text-zinc-400">
+                {totalFiles} arquivo{totalFiles !== 1 && 's'}
+                {doneCount > 0 && (
+                  <span className="text-emerald-400 ml-2">
+                    · {doneCount} enviado{doneCount !== 1 && 's'}
+                  </span>
+                )}
+                {errorCount > 0 && (
+                  <span className="text-red-400 ml-2">
+                    · {errorCount} com erro
+                  </span>
+                )}
+              </p>
+              {!uploading && pendingCount > 0 && (
                 <button
                   type="button"
                   onClick={() => {
-                    setCoverFile(null)
-                    setCoverPreview(null)
+                    entries.forEach((e) => {
+                      if (e.coverPreview) URL.revokeObjectURL(e.coverPreview)
+                    })
+                    setEntries([])
                   }}
-                  className="text-red-400 hover:text-red-300 mt-1 flex items-center gap-1"
+                  className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
                 >
-                  <FaTimes size={10} /> Remover capa
+                  Limpar tudo
                 </button>
               )}
             </div>
-          </div>
-        </div>
 
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={uploading || !audioFile}
-          className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-700 disabled:cursor-not-allowed text-black disabled:text-zinc-400 font-bold py-3.5 rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 text-lg"
-        >
-          {uploading ? (
-            <>
-              <FaSpinner className="animate-spin" />
-              Enviando...
-            </>
-          ) : (
-            <>
-              <FaCloudUploadAlt />
-              Enviar Música
-            </>
+            {entries.map((entry, index) => (
+              <div
+                key={entry.id}
+                className={`rounded-xl border transition-all ${
+                  entry.status === 'done'
+                    ? 'bg-emerald-500/5 border-emerald-500/20'
+                    : entry.status === 'error'
+                      ? 'bg-red-500/5 border-red-500/20'
+                      : entry.status === 'uploading'
+                        ? 'bg-zinc-800/50 border-emerald-500/30 animate-pulse'
+                        : 'bg-zinc-900/40 border-zinc-800/50'
+                }`}
+              >
+                <div className="p-4">
+                  {/* Header row: number, filename, status, remove */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-xs text-zinc-500 font-mono w-6 text-right flex-shrink-0">
+                      {index + 1}
+                    </span>
+
+                    {/* Status icon */}
+                    {entry.status === 'done' ? (
+                      <FaCheck className="text-emerald-500 flex-shrink-0" size={14} />
+                    ) : entry.status === 'error' ? (
+                      <FaTimes className="text-red-400 flex-shrink-0" size={14} />
+                    ) : entry.status === 'uploading' ? (
+                      <FaSpinner className="text-emerald-500 animate-spin flex-shrink-0" size={14} />
+                    ) : (
+                      <FaMusic className="text-zinc-500 flex-shrink-0" size={14} />
+                    )}
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{entry.file.name}</p>
+                      <p className="text-xs text-zinc-500">
+                        {(entry.file.size / (1024 * 1024)).toFixed(1)} MB
+                        {entry.duration > 0 &&
+                          ` · ${Math.floor(entry.duration / 60)}:${(entry.duration % 60).toString().padStart(2, '0')}`}
+                      </p>
+                    </div>
+
+                    {entry.status === 'error' && (
+                      <p className="text-xs text-red-400 flex-shrink-0">{entry.errorMsg}</p>
+                    )}
+
+                    {(entry.status === 'pending' || entry.status === 'error') && !uploading && (
+                      <button
+                        type="button"
+                        onClick={() => removeEntry(entry.id)}
+                        className="p-1.5 text-zinc-600 hover:text-red-400 transition-colors flex-shrink-0"
+                        title="Remover"
+                      >
+                        <FaTrash size={12} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Editable fields (only for pending/error) */}
+                  {(entry.status === 'pending' || entry.status === 'error') && (
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-2 ml-9">
+                      <input
+                        type="text"
+                        value={entry.title}
+                        onChange={(e) => updateEntry(entry.id, { title: e.target.value })}
+                        placeholder="Título *"
+                        disabled={uploading}
+                        className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg py-2 px-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:opacity-50"
+                      />
+                      <input
+                        type="text"
+                        value={entry.artist}
+                        onChange={(e) => updateEntry(entry.id, { artist: e.target.value })}
+                        placeholder="Artista *"
+                        disabled={uploading}
+                        className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg py-2 px-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:opacity-50"
+                      />
+                      <select
+                        value={entry.genre}
+                        onChange={(e) => updateEntry(entry.id, { genre: e.target.value })}
+                        disabled={uploading}
+                        className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none disabled:opacity-50"
+                      >
+                        <option value="">Gênero</option>
+                        {GENRES.map((g) => (
+                          <option key={g} value={g}>
+                            {g}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Cover */}
+                      <div className="flex items-center gap-2">
+                        {entry.coverPreview ? (
+                          <div className="relative w-9 h-9 flex-shrink-0">
+                            <img
+                              src={entry.coverPreview}
+                              alt=""
+                              className="w-full h-full rounded-md object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeCoverForEntry(entry.id)}
+                              className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5"
+                              title="Remover capa"
+                            >
+                              <FaTimes className="text-white" size={8} />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="w-9 h-9 flex-shrink-0 rounded-md bg-zinc-800 border border-zinc-700/50 flex items-center justify-center cursor-pointer hover:border-zinc-500 transition-colors">
+                            <FaImage className="text-zinc-600 text-xs" />
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) {
+                                  handleCoverForEntry(entry.id, e.target.files[0])
+                                }
+                              }}
+                              className="hidden"
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Retry for errored entries */}
+                  {entry.status === 'error' && !uploading && (
+                    <div className="ml-9 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => updateEntry(entry.id, { status: 'pending', errorMsg: undefined })}
+                        className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                      >
+                        Marcar para reenvio
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Upload progress bar */}
+          {uploading && totalFiles > 0 && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                <span>Enviando...</span>
+                <span>{doneCount + errorCount} / {entries.filter(e => e.status !== 'done' || e.status === 'done').length}</span>
+              </div>
+              <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-500 rounded-full"
+                  style={{
+                    width: `${((doneCount + errorCount) / totalFiles) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
           )}
-        </button>
-      </form>
+
+          {/* Submit */}
+          <button
+            type="button"
+            onClick={handleUploadAll}
+            disabled={uploading || pendingCount === 0}
+            className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-700 disabled:cursor-not-allowed text-black disabled:text-zinc-400 font-bold py-3.5 rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 text-lg"
+          >
+            {uploading ? (
+              <>
+                <FaSpinner className="animate-spin" />
+                Enviando {doneCount + 1} de {totalFiles}...
+              </>
+            ) : pendingCount === 0 && doneCount > 0 ? (
+              <>
+                <FaCheck />
+                Tudo enviado!
+              </>
+            ) : (
+              <>
+                <FaCloudUploadAlt />
+                Enviar {pendingCount} música{pendingCount !== 1 && 's'}
+              </>
+            )}
+          </button>
+        </>
+      )}
     </div>
   )
 }
