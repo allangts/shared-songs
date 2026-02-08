@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  avatar    String?
+  songs     Song[]
+  likes     Like[]
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+model Song {
+  id         String   @id @default(cuid())
+  title      String
+  artist     String
+  genre      String?
+  duration   Int      @default(0)
+  audioKey   String
+  coverKey   String?
+  plays      Int      @default(0)
+  uploader   User     @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  uploaderId String
+  likes      Like[]
+  createdAt  DateTime @default(now())
+
+  @@index([uploaderId])
+  @@index([uploaderId, createdAt(sort: Desc)])
+  @@index([genre])
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  song      Song     @relation(fields: [songId], references: [id], onDelete: Cascade)
+  songId    String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, songId])
+  @@index([userId])
+  @@index([songId])
+}
