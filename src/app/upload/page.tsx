@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   FaCloudUploadAlt,
@@ -11,16 +11,21 @@ import {
   FaCheck,
   FaPlus,
   FaTrash,
+  FaFolderOpen,
+  FaTag,
 } from 'react-icons/fa'
 import { useAuth } from '@/contexts/AuthContext'
 import { GENRES } from '@/types'
+import type { Album } from '@/types'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
+import jsmediatags from 'jsmediatags'
 
 interface FileEntry {
   id: string
   file: File
   title: string
+  artist: string
   duration: number
   status: 'pending' | 'uploading' | 'done' | 'error'
   errorMsg?: string
@@ -52,13 +57,46 @@ function getDuration(file: File): Promise<number> {
   })
 }
 
+interface MediaTags {
+  title?: string
+  artist?: string
+  album?: string
+  genre?: string
+  picture?: { format: string; data: number[] }
+}
+
+function readMediaTags(file: File): Promise<MediaTags> {
+  return new Promise((resolve) => {
+    jsmediatags.read(file, {
+      onSuccess: (result: any) => {
+        const tags = result.tags || {}
+        resolve({
+          title: tags.title || undefined,
+          artist: tags.artist || undefined,
+          album: tags.album || undefined,
+          genre: tags.genre || undefined,
+          picture: tags.picture || undefined,
+        })
+      },
+      onError: () => {
+        resolve({})
+      },
+    })
+  })
+}
+
+function pictureToBlob(picture: { format: string; data: number[] }): Blob {
+  const bytes = new Uint8Array(picture.data)
+  return new Blob([bytes], { type: picture.format })
+}
+
 export default function UploadPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const audioInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
 
-  // File entries (only title is per-file)
+  // File entries
   const [entries, setEntries] = useState<FileEntry[]>([])
 
   // Shared fields for all files
@@ -66,6 +104,13 @@ export default function UploadPage() {
   const [genre, setGenre] = useState('')
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
+  const [metadataLoading, setMetadataLoading] = useState(false)
+
+  // Album selection
+  const [albums, setAlbums] = useState<Album[]>([])
+  const [albumMode, setAlbumMode] = useState<'none' | 'existing' | 'new'>('none')
+  const [selectedAlbumId, setSelectedAlbumId] = useState('')
+  const [newAlbumName, setNewAlbumName] = useState('')
 
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
@@ -75,6 +120,15 @@ export default function UploadPage() {
   const doneCount = entries.filter((e) => e.status === 'done').length
   const errorCount = entries.filter((e) => e.status === 'error').length
   const pendingCount = entries.filter((e) => e.status === 'pending').length
+
+  // Fetch user albums
+  useEffect(() => {
+    if (!user) return
+    fetch('/api/albums')
+      .then((res) => (res.ok ? res.json() : { albums: [] }))
+      .then((data) => setAlbums(data.albums || []))
+      .catch(() => {})
+  }, [user])
 
   const addFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -92,20 +146,64 @@ export default function UploadPage() {
 
       const validFiles = audioFiles.filter((f) => f.size <= 100 * 1024 * 1024)
 
+      setMetadataLoading(true)
+
+      let firstArtist = ''
+      let firstGenre = ''
+      let firstPicture: { format: string; data: number[] } | undefined
+
       const newEntries: FileEntry[] = await Promise.all(
-        validFiles.map(async (file) => {
-          const duration = await getDuration(file)
+        validFiles.map(async (file, index) => {
+          const [duration, tags] = await Promise.all([
+            getDuration(file),
+            readMediaTags(file),
+          ])
+
+          // Capturar dados do primeiro arquivo para preencher campos globais
+          if (index === 0) {
+            firstArtist = tags.artist || ''
+            firstGenre = tags.genre || ''
+            firstPicture = tags.picture
+          }
+
           return {
             id: generateEntryId(),
             file,
-            title: titleFromFilename(file.name),
+            title: tags.title || titleFromFilename(file.name),
+            artist: tags.artist || '',
             duration,
             status: 'pending' as const,
           }
         })
       )
 
+      // Auto-preencher campos globais se estiverem vazios
+      setArtist((prev) => prev || firstArtist)
+
+      // Tentar mapear gênero dos metadados para um dos gêneros disponíveis
+      if (firstGenre) {
+        const genreLower = firstGenre.toLowerCase()
+        const match = GENRES.find(
+          (g) => g.toLowerCase() === genreLower || genreLower.includes(g.toLowerCase())
+        )
+        if (match) {
+          setGenre((prev) => prev || match)
+        }
+      }
+
+      // Auto-preencher capa a partir dos metadados do primeiro arquivo
+      if (firstPicture && !coverFile) {
+        const blob = pictureToBlob(firstPicture)
+        const ext = firstPicture.format.split('/')[1] || 'jpg'
+        const metaCoverFile = new File([blob], `cover.${ext}`, {
+          type: firstPicture.format,
+        })
+        setCoverFile(metaCoverFile)
+        setCoverPreview(URL.createObjectURL(blob))
+      }
+
       setEntries((prev) => [...prev, ...newEntries])
+      setMetadataLoading(false)
 
       if (validFiles.length === 1) {
         toast.success('1 arquivo adicionado')
@@ -113,7 +211,7 @@ export default function UploadPage() {
         toast.success(`${validFiles.length} arquivos adicionados`)
       }
     },
-    []
+    [coverFile]
   )
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -154,15 +252,18 @@ export default function UploadPage() {
     )
   }
 
-  const handleCoverSelect = useCallback((file: File) => {
-    if (!file.type.startsWith('image/')) {
-      toast.error('Por favor, selecione uma imagem válida')
-      return
-    }
-    if (coverPreview) URL.revokeObjectURL(coverPreview)
-    setCoverFile(file)
-    setCoverPreview(URL.createObjectURL(file))
-  }, [coverPreview])
+  const handleCoverSelect = useCallback(
+    (file: File) => {
+      if (!file.type.startsWith('image/')) {
+        toast.error('Por favor, selecione uma imagem válida')
+        return
+      }
+      if (coverPreview) URL.revokeObjectURL(coverPreview)
+      setCoverFile(file)
+      setCoverPreview(URL.createObjectURL(file))
+    },
+    [coverPreview]
+  )
 
   const removeCover = () => {
     if (coverPreview) URL.revokeObjectURL(coverPreview)
@@ -189,10 +290,45 @@ export default function UploadPage() {
       }
     }
 
+    if (albumMode === 'new' && !newAlbumName.trim()) {
+      toast.error('Preencha o nome do novo álbum')
+      return
+    }
+
+    if (albumMode === 'existing' && !selectedAlbumId) {
+      toast.error('Selecione um álbum')
+      return
+    }
+
     setUploading(true)
+
+    // Criar novo álbum se necessário
+    let albumId = albumMode === 'existing' ? selectedAlbumId : ''
+
+    if (albumMode === 'new') {
+      try {
+        const res = await fetch('/api/albums', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newAlbumName.trim() }),
+        })
+        if (!res.ok) {
+          const data = await res.json()
+          throw new Error(data.error || 'Erro ao criar álbum')
+        }
+        const data = await res.json()
+        albumId = data.album.id
+        toast.success(`Álbum "${newAlbumName.trim()}" criado!`)
+      } catch (err: any) {
+        toast.error(err.message || 'Erro ao criar álbum')
+        setUploading(false)
+        return
+      }
+    }
 
     let successCount = 0
     let failCount = 0
+    const uploadedSongIds: string[] = []
 
     for (const entry of pendingEntries) {
       updateEntryStatus(entry.id, 'uploading')
@@ -218,11 +354,27 @@ export default function UploadPage() {
           throw new Error(data.error || 'Erro ao enviar')
         }
 
+        const data = await res.json()
+        uploadedSongIds.push(data.song.id)
         updateEntryStatus(entry.id, 'done')
         successCount++
       } catch (err: any) {
         updateEntryStatus(entry.id, 'error', err.message || 'Erro ao enviar')
         failCount++
+      }
+    }
+
+    // Adicionar músicas ao álbum
+    if (albumId && uploadedSongIds.length > 0) {
+      try {
+        await fetch(`/api/albums/${albumId}/songs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ songIds: uploadedSongIds }),
+        })
+      } catch (err) {
+        console.error('Erro ao adicionar músicas ao álbum:', err)
+        toast.error('Músicas enviadas, mas houve erro ao adicioná-las ao álbum')
       }
     }
 
@@ -235,7 +387,11 @@ export default function UploadPage() {
           : `${successCount} músicas enviadas com sucesso! 🎵`
       )
       setTimeout(() => {
-        router.push('/library')
+        if (albumId) {
+          router.push(`/albums/${albumId}`)
+        } else {
+          router.push('/library')
+        }
       }, 1000)
     } else {
       toast.error(
@@ -277,7 +433,7 @@ export default function UploadPage() {
       <div className="mb-8">
         <h1 className="text-2xl md:text-3xl font-bold">Upload de Músicas</h1>
         <p className="text-zinc-400 mt-2">
-          Adicione músicas à sua biblioteca pessoal — selecione vários arquivos de uma vez
+          Adicione músicas à sua biblioteca — metadados são lidos automaticamente dos arquivos
         </p>
       </div>
 
@@ -310,7 +466,12 @@ export default function UploadPage() {
           className="hidden"
         />
 
-        {entries.length > 0 ? (
+        {metadataLoading ? (
+          <div className="flex items-center justify-center gap-3">
+            <FaSpinner className="text-emerald-500 animate-spin" />
+            <p className="text-sm text-zinc-300">Lendo metadados dos arquivos...</p>
+          </div>
+        ) : entries.length > 0 ? (
           <div className="flex items-center justify-center gap-3">
             <FaPlus className="text-emerald-500" />
             <p className="text-sm text-zinc-300">
@@ -327,6 +488,10 @@ export default function UploadPage() {
             </p>
             <p className="text-zinc-400 text-sm">
               ou clique para selecionar · Múltiplos arquivos · MP3, WAV, FLAC, OGG · Máx 100MB cada
+            </p>
+            <p className="text-zinc-500 text-xs mt-2">
+              <FaTag className="inline mr-1" />
+              Artista, título e capa são extraídos automaticamente dos metadados (ID3)
             </p>
           </div>
         )}
@@ -426,7 +591,82 @@ export default function UploadPage() {
             </div>
           </div>
 
-          {/* File List - only title editable per file */}
+          {/* Album Selection */}
+          <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-5 mb-6">
+            <p className="text-xs text-zinc-400 uppercase tracking-wider font-semibold mb-4">
+              <FaFolderOpen className="inline mr-1.5" />
+              Adicionar a um álbum (opcional)
+            </p>
+
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => { setAlbumMode('none'); setSelectedAlbumId(''); setNewAlbumName('') }}
+                disabled={uploading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  albumMode === 'none'
+                    ? 'bg-zinc-700 text-white'
+                    : 'bg-zinc-800/50 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                }`}
+              >
+                Sem álbum
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAlbumMode('existing'); setNewAlbumName('') }}
+                disabled={uploading || albums.length === 0}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  albumMode === 'existing'
+                    ? 'bg-zinc-700 text-white'
+                    : 'bg-zinc-800/50 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                } disabled:opacity-40 disabled:cursor-not-allowed`}
+              >
+                Álbum existente {albums.length > 0 && `(${albums.length})`}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAlbumMode('new'); setSelectedAlbumId('') }}
+                disabled={uploading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  albumMode === 'new'
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-zinc-800/50 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                }`}
+              >
+                <FaPlus className="inline mr-1.5" size={10} />
+                Novo álbum
+              </button>
+            </div>
+
+            {albumMode === 'existing' && (
+              <select
+                value={selectedAlbumId}
+                onChange={(e) => setSelectedAlbumId(e.target.value)}
+                disabled={uploading}
+                className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all appearance-none disabled:opacity-50"
+              >
+                <option value="">Selecione um álbum</option>
+                {albums.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.songCount} música{a.songCount !== 1 ? 's' : ''})
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {albumMode === 'new' && (
+              <input
+                type="text"
+                value={newAlbumName}
+                onChange={(e) => setNewAlbumName(e.target.value)}
+                placeholder="Nome do novo álbum"
+                disabled={uploading}
+                className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl py-3 px-4 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all disabled:opacity-50"
+              />
+            )}
+          </div>
+
+          {/* File List - title editable per file */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm text-zinc-400">
@@ -500,6 +740,9 @@ export default function UploadPage() {
                       <p className="text-sm font-medium truncate">{entry.title}</p>
                     )}
                     <p className="text-xs text-zinc-500 truncate">
+                      {entry.artist && (
+                        <span className="text-zinc-400">{entry.artist} · </span>
+                      )}
                       {entry.file.name} · {(entry.file.size / (1024 * 1024)).toFixed(1)} MB
                       {entry.duration > 0 &&
                         ` · ${Math.floor(entry.duration / 60)}:${(entry.duration % 60).toString().padStart(2, '0')}`}
@@ -582,6 +825,8 @@ export default function UploadPage() {
               <>
                 <FaCloudUploadAlt />
                 Enviar {pendingCount} música{pendingCount !== 1 && 's'}
+                {albumMode === 'new' && newAlbumName.trim() && ` → "${newAlbumName.trim()}"`}
+                {albumMode === 'existing' && selectedAlbumId && ` → ${albums.find((a) => a.id === selectedAlbumId)?.name || 'álbum'}`}
               </>
             )}
           </button>
