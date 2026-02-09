@@ -29,7 +29,7 @@ async function safeDeleteMany(
   modelName: string
 ): Promise<number> {
   try {
-    const result = await model.deleteMany(where)
+    const result = await model.deleteMany({ where })
     return result.count || 0
   } catch (error: any) {
     if (error.code === 'P2021') {
