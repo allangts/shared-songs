@@ -42,7 +42,7 @@ function LandingPage() {
 
             <p className="text-zinc-400 text-base md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
               Faça upload das suas músicas e ouça de qualquer lugar.
-              Sua biblioteca pessoal, segura e privada na nuvem.
+              Sua biblioteca pessoal, segura e privada.
             </p>
 
             <div className="flex flex-wrap justify-center gap-3 mb-16">

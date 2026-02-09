@@ -13,7 +13,7 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'Private Songs - Sua Biblioteca Musical Pessoal',
   description:
-    'Sua biblioteca musical pessoal na nuvem. Faça upload das suas músicas, organize em álbuns e ouça de qualquer lugar.',
+    'Sua biblioteca musical pessoal. Faça upload das suas músicas, organize em álbuns e ouça de qualquer lugar.',
 }
 
 export default function RootLayout({

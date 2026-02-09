@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getPresignedUrl } from '@/lib/s3'
+import { getFileUrl, deleteFile } from '@/lib/storage'
 import { getUserFromRequest } from '@/lib/auth'
 
 export async function GET(
@@ -47,12 +47,9 @@ export async function GET(
       data: { plays: { increment: 1 } },
     })
 
-    // Generate presigned URLs
-    const audioUrl = await getPresignedUrl(song.audioKey)
-    let coverUrl = null
-    if (song.coverKey) {
-      coverUrl = await getPresignedUrl(song.coverKey)
-    }
+    // Gerar URLs locais
+    const audioUrl = getFileUrl(song.audioKey)
+    const coverUrl = song.coverKey ? getFileUrl(song.coverKey) : null
 
     return NextResponse.json({
       song: {
@@ -107,6 +104,12 @@ export async function DELETE(
         { error: 'Acesso negado' },
         { status: 403 }
       )
+    }
+
+    // Deletar arquivos locais
+    await deleteFile(song.audioKey)
+    if (song.coverKey) {
+      await deleteFile(song.coverKey)
     }
 
     // Deletar likes associados e depois a música

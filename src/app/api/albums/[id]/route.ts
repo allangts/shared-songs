@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getPresignedUrl } from '@/lib/s3'
+import { getFileUrl } from '@/lib/storage'
 import { getUserFromRequest } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
@@ -53,47 +53,28 @@ export async function GET(
       )
     }
 
-    let albumCoverUrl = null
-    if (album.coverKey) {
-      try {
-        albumCoverUrl = await getPresignedUrl(album.coverKey)
-      } catch {}
-    }
+    let albumCoverUrl = album.coverKey ? getFileUrl(album.coverKey) : null
 
-    const songsWithUrls = await Promise.all(
-      album.songs.map(async (albumSong) => {
-        const song = albumSong.song
-        let audioUrl = ''
-        let coverUrl = null
+    const songsWithUrls = album.songs.map((albumSong) => {
+      const song = albumSong.song
+      const audioUrl = getFileUrl(song.audioKey)
+      const coverUrl = song.coverKey ? getFileUrl(song.coverKey) : null
 
-        try {
-          audioUrl = await getPresignedUrl(song.audioKey)
-        } catch {
-          audioUrl = ''
-        }
-
-        if (song.coverKey) {
-          try {
-            coverUrl = await getPresignedUrl(song.coverKey)
-          } catch {}
-        }
-
-        return {
-          id: song.id,
-          title: song.title,
-          artist: song.artist,
-          genre: song.genre,
-          duration: song.duration,
-          audioUrl,
-          coverUrl,
-          plays: song.plays,
-          likes: song._count.likes,
-          isFavorite: song.likes.length > 0,
-          uploaderId: song.uploaderId,
-          createdAt: song.createdAt.toISOString(),
-        }
-      })
-    )
+      return {
+        id: song.id,
+        title: song.title,
+        artist: song.artist,
+        genre: song.genre,
+        duration: song.duration,
+        audioUrl,
+        coverUrl,
+        plays: song.plays,
+        likes: song._count.likes,
+        isFavorite: song.likes.length > 0,
+        uploaderId: song.uploaderId,
+        createdAt: song.createdAt.toISOString(),
+      }
+    })
 
     // Se o álbum não tem capa própria, usa a capa da primeira música
     if (!albumCoverUrl && songsWithUrls.length > 0 && songsWithUrls[0].coverUrl) {

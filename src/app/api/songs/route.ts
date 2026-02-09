@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getPresignedUrl } from '@/lib/s3'
+import { getFileUrl } from '@/lib/storage'
 import { getUserFromRequest } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
@@ -70,43 +70,26 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // Generate presigned URLs for each song
-    const songsWithUrls = await Promise.all(
-      songs.map(async (song) => {
-        let audioUrl = ''
-        let coverUrl = null
+    // Gerar URLs locais para cada música
+    const songsWithUrls = songs.map((song) => {
+      const audioUrl = getFileUrl(song.audioKey)
+      const coverUrl = song.coverKey ? getFileUrl(song.coverKey) : null
 
-        try {
-          audioUrl = await getPresignedUrl(song.audioKey)
-        } catch (err) {
-          console.error(`Error generating audio URL for ${song.id}:`, err)
-          audioUrl = ''
-        }
-
-        if (song.coverKey) {
-          try {
-            coverUrl = await getPresignedUrl(song.coverKey)
-          } catch (err) {
-            console.error(`Error generating cover URL for ${song.id}:`, err)
-          }
-        }
-
-        return {
-          id: song.id,
-          title: song.title,
-          artist: song.artist,
-          genre: song.genre,
-          duration: song.duration,
-          audioUrl,
-          coverUrl,
-          plays: song.plays,
-          likes: song._count.likes,
-          isFavorite: song.likes.length > 0,
-          uploaderId: song.uploaderId,
-          createdAt: song.createdAt.toISOString(),
-        }
-      })
-    )
+      return {
+        id: song.id,
+        title: song.title,
+        artist: song.artist,
+        genre: song.genre,
+        duration: song.duration,
+        audioUrl,
+        coverUrl,
+        plays: song.plays,
+        likes: song._count.likes,
+        isFavorite: song.likes.length > 0,
+        uploaderId: song.uploaderId,
+        createdAt: song.createdAt.toISOString(),
+      }
+    })
 
     return NextResponse.json({ songs: songsWithUrls })
   } catch (error) {

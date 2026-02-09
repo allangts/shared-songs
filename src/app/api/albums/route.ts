@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getPresignedUrl } from '@/lib/s3'
+import { getFileUrl } from '@/lib/storage'
 import { getUserFromRequest } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
@@ -35,32 +35,26 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    const albumsWithUrls = await Promise.all(
-      albums.map(async (album) => {
-        let coverUrl = null
+    const albumsWithUrls = albums.map((album) => {
+      let coverUrl = null
 
-        // Usa a capa do álbum ou a capa da primeira música
-        if (album.coverKey) {
-          try {
-            coverUrl = await getPresignedUrl(album.coverKey)
-          } catch {}
-        } else if (album.songs[0]?.song.coverKey) {
-          try {
-            coverUrl = await getPresignedUrl(album.songs[0].song.coverKey)
-          } catch {}
-        }
+      // Usa a capa do álbum ou a capa da primeira música
+      if (album.coverKey) {
+        coverUrl = getFileUrl(album.coverKey)
+      } else if (album.songs[0]?.song.coverKey) {
+        coverUrl = getFileUrl(album.songs[0].song.coverKey)
+      }
 
-        return {
-          id: album.id,
-          name: album.name,
-          description: album.description,
-          coverUrl,
-          songCount: album._count.songs,
-          createdAt: album.createdAt.toISOString(),
-          updatedAt: album.updatedAt.toISOString(),
-        }
-      })
-    )
+      return {
+        id: album.id,
+        name: album.name,
+        description: album.description,
+        coverUrl,
+        songCount: album._count.songs,
+        createdAt: album.createdAt.toISOString(),
+        updatedAt: album.updatedAt.toISOString(),
+      }
+    })
 
     return NextResponse.json({ albums: albumsWithUrls })
   } catch (error) {

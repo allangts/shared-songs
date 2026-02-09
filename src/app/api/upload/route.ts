@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { uploadToS3 } from '@/lib/s3'
+import { saveFile } from '@/lib/storage'
 import { getUserFromRequest } from '@/lib/auth'
 import { randomUUID } from 'crypto'
 
@@ -46,21 +46,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Upload audio to S3
+    // Salvar áudio localmente
     const audioBuffer = Buffer.from(await audio.arrayBuffer())
     const audioExt = audio.name.split('.').pop() || 'mp3'
     const audioKey = `songs/${randomUUID()}.${audioExt}`
 
-    await uploadToS3(audioBuffer, audioKey, audio.type)
+    await saveFile(audioBuffer, audioKey, audio.type)
 
-    // Upload cover to S3 (if provided)
+    // Salvar capa localmente (se fornecida)
     let coverKey: string | null = null
     if (cover && cover.size > 0 && cover.type.startsWith('image/')) {
       const coverBuffer = Buffer.from(await cover.arrayBuffer())
       const coverExt = cover.name.split('.').pop() || 'jpg'
       coverKey = `covers/${randomUUID()}.${coverExt}`
 
-      await uploadToS3(coverBuffer, coverKey, cover.type)
+      await saveFile(coverBuffer, coverKey, cover.type)
     }
 
     // Save to database
