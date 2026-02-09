@@ -20,6 +20,26 @@ const KEEP_EMAIL = 'allandiegoafonsoalmeida@gmail.com'
 
 const prisma = new PrismaClient()
 
+/**
+ * Tenta deletar registros de uma tabela, ignora se a tabela não existir
+ */
+async function safeDeleteMany(
+  model: any,
+  where: any,
+  modelName: string
+): Promise<number> {
+  try {
+    const result = await model.deleteMany(where)
+    return result.count || 0
+  } catch (error: any) {
+    if (error.code === 'P2021') {
+      // Tabela não existe
+      return 0
+    }
+    throw error
+  }
+}
+
 async function main() {
   console.log(`⚠️  Este script vai EXCLUIR todas as contas EXCETO: ${KEEP_EMAIL}\n`)
 
@@ -56,23 +76,40 @@ async function main() {
   const userIds = usersToDelete.map((u) => u.id)
 
   // Buscar arquivos das músicas desses usuários para deletar do disco
-  const songsToDelete = await prisma.song.findMany({
-    where: { uploaderId: { in: userIds } },
-    select: { audioKey: true, coverKey: true },
-  })
+  let songsToDelete: Array<{ audioKey: string; coverKey: string | null }> = []
+  try {
+    songsToDelete = await prisma.song.findMany({
+      where: { uploaderId: { in: userIds } },
+      select: { audioKey: true, coverKey: true },
+    })
+  } catch (error: any) {
+    if (error.code !== 'P2021') {
+      // Se não for erro de tabela inexistente, relança
+      throw error
+    }
+    // Tabela Song não existe, continuar
+  }
 
   // Deletar registros do banco (cascade cuida de AlbumSong e Like)
   console.log('🗑️  Deletando dados dos outros usuários...')
 
-  const deletedSongs = await prisma.song.deleteMany({
-    where: { uploaderId: { in: userIds } },
-  })
-  console.log(`   ${deletedSongs.count} música(s) deletada(s)`)
+  const deletedSongs = await safeDeleteMany(
+    prisma.song,
+    { uploaderId: { in: userIds } },
+    'Song'
+  )
+  if (deletedSongs > 0) {
+    console.log(`   ${deletedSongs} música(s) deletada(s)`)
+  }
 
-  const deletedAlbums = await prisma.album.deleteMany({
-    where: { userId: { in: userIds } },
-  })
-  console.log(`   ${deletedAlbums.count} álbum(ns) deletado(s)`)
+  const deletedAlbums = await safeDeleteMany(
+    prisma.album,
+    { userId: { in: userIds } },
+    'Album'
+  )
+  if (deletedAlbums > 0) {
+    console.log(`   ${deletedAlbums} álbum(ns) deletado(s)`)
+  }
 
   const deletedUsers = await prisma.user.deleteMany({
     where: { id: { in: userIds } },
@@ -99,7 +136,9 @@ async function main() {
     }
   }
 
-  console.log(`   ${filesDeleted} arquivo(s) removido(s) do disco`)
+  if (filesDeleted > 0) {
+    console.log(`   ${filesDeleted} arquivo(s) removido(s) do disco`)
+  }
 
   console.log('\n✅ Concluído! Apenas a conta preservada permanece.')
 }
