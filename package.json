@@ -9,7 +9,8 @@
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "delete-all-songs": "npx tsx scripts/delete-all-songs.ts"
+    "delete-all-songs": "npx tsx scripts/delete-all-songs.ts",
+    "delete-other-accounts": "npx tsx scripts/delete-other-accounts.ts"
   },
   "dependencies": {
     "next": "14.2.15",
