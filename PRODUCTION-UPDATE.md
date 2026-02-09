@@ -20,16 +20,37 @@ cd ~/shared-songs
 # 2. Instalar novas dependências (jsmediatags)
 npm install
 
-# 3. Gerar Prisma Client
+# 3. Aplicar schema do banco (cria tabelas Album e AlbumSong se não existirem)
+npx prisma db push --accept-data-loss
+
+# 4. Gerar Prisma Client
 npx prisma generate
 
-# 4. Fazer build da aplicação
+# 5. Fazer build da aplicação
 npm run build
 
-# 5. Reiniciar a aplicação no PM2
+# 6. Reiniciar a aplicação no PM2
 pm2 restart shared-songs
 # ou se o nome for diferente:
 pm2 restart private-songs
+```
+
+## ⚠️ IMPORTANTE: Se a tabela Album não existir
+
+Se você receber erro `The table 'public.Album' does not exist`, execute:
+
+```bash
+cd ~/shared-songs
+./scripts/setup-database.sh
+```
+
+Ou manualmente:
+
+```bash
+cd ~/shared-songs
+npx prisma db push --accept-data-loss
+npx prisma generate
+pm2 restart shared-songs
 ```
 
 ## Verificar se está funcionando

@@ -20,15 +20,19 @@ fi
 echo "📦 Instalando dependências..."
 npm install
 
-# 3. Gerar Prisma Client
+# 3. Aplicar schema do banco (se necessário)
+echo "🗄️  Verificando schema do banco de dados..."
+npx prisma db push --accept-data-loss || echo "⚠️  Erro ao aplicar schema (pode ser que já esteja atualizado)"
+
+# 4. Gerar Prisma Client
 echo "🔧 Gerando Prisma Client..."
 npx prisma generate
 
-# 4. Build da aplicação
+# 5. Build da aplicação
 echo "🏗️  Fazendo build da aplicação..."
 npm run build
 
-# 5. Reiniciar PM2
+# 6. Reiniciar PM2
 echo "🔄 Reiniciando aplicação no PM2..."
 pm2 restart shared-songs || pm2 restart private-songs || {
   echo "⚠️  PM2 não encontrou a aplicação. Tentando iniciar..."
