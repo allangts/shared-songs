@@ -267,12 +267,6 @@ export default function UploadPage() {
           >
             Entrar
           </Link>
-          <Link
-            href="/register"
-            className="bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2.5 px-6 rounded-full text-sm transition-all hover:scale-105"
-          >
-            Registrar
-          </Link>
         </div>
       </div>
     )

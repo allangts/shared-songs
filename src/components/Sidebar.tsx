@@ -123,14 +123,8 @@ export default function Sidebar() {
         ) : (
           <div className="flex flex-col gap-2">
             <Link
-              href="/register"
-              className="block text-center py-2 px-4 bg-white text-black rounded-full font-bold text-sm hover:scale-105 transition-transform"
-            >
-              Registrar
-            </Link>
-            <Link
               href="/login"
-              className="block text-center py-2 px-4 text-zinc-400 hover:text-white font-semibold text-sm transition-colors"
+              className="block text-center py-2 px-4 bg-emerald-500 hover:bg-emerald-400 text-black rounded-full font-bold text-sm hover:scale-105 transition-transform"
             >
               Entrar
             </Link>

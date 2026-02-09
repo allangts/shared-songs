@@ -47,14 +47,8 @@ function LandingPage() {
 
             <div className="flex flex-wrap justify-center gap-3 mb-16">
               <Link
-                href="/register"
-                className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold py-3.5 px-10 rounded-full text-sm md:text-base transition-all hover:scale-105 hover:shadow-lg hover:shadow-emerald-500/25"
-              >
-                Criar Conta Grátis
-              </Link>
-              <Link
                 href="/login"
-                className="bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3.5 px-10 rounded-full text-sm md:text-base transition-all hover:scale-105 border border-zinc-700"
+                className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold py-3.5 px-10 rounded-full text-sm md:text-base transition-all hover:scale-105 hover:shadow-lg hover:shadow-emerald-500/25"
               >
                 Entrar
               </Link>
